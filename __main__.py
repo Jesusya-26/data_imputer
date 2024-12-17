@@ -1,4 +1,4 @@
-from data_imputer.imputer import DataImputer
+from data_imputer import DataImputer
 
 dataset_path = "data_imputer/simulations/living_building_spb_140822_080633.geojson"
 imputer = DataImputer(dataset_path)
