@@ -6,7 +6,7 @@ authors = ["Ruslan Babayev <rus.babaef@yandex.ru>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 geopandas = "^1.0.1"
 joblib = "^1.4.2"
 numpy = "2.0.1"
