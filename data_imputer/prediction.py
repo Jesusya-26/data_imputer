@@ -179,20 +179,25 @@ def parse_config_models(columns: list, path: str | None = None) -> dict:
 
 def save_logs_object(model, model_name: str) -> None:
     cv_result = pd.DataFrame(model.cv_results_)
-    last_created_folder = max(
-        glob.glob(os.path.join(os.getcwd(), "/data_imputer/logs", "*/")),
-        key=os.path.getmtime,
-    )
+    folder_path = os.path.join(os.getcwd(), "data_imputer", "logs")
+    folders = glob.glob(os.path.join(folder_path, "*/"))
+
+    if not folders:
+        raise ValueError(f"No subfolders found in {folder_path}")
+
+    last_created_folder = max(folders, key = os.path.getmtime)
     log_file = os.path.join(last_created_folder, model_name + ".xlsx")
     cv_result.to_excel(log_file, engine="openpyxl")
 
 
 def save_model_object(model, model_name: str) -> None:
-    last_created_folder = max(
-        glob.glob(
-            os.path.join(os.getcwd(), "/data_imputer/fitted_model", "*/")
-        ),
-        key=os.path.getmtime,
-    )
+    folder_path = os.path.join(os.getcwd(), "data_imputer", "fitted_model")
+    folders = glob.glob(os.path.join(folder_path, "*/"))
+
+    if not folders:
+        raise ValueError(f"No subfolders found in {folder_path}")
+
+    last_created_folder = max(folders, key = os.path.getmtime)
     path = os.path.join(last_created_folder, model_name + "_GBDT.joblib")
     dump(model, path)
+
