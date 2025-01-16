@@ -95,7 +95,6 @@ def search_neighbors_from_polygon(loc, df):
 
 
 def search_neighbors_from_point(data, n_neigh, radius):
-
     x = data.geometry.centroid.apply(lambda point: point.x)
     y = data.geometry.centroid.apply(lambda point: point.y)
     points = pd.DataFrame({"x": x, "y": y})

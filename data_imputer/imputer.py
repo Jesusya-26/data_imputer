@@ -512,13 +512,13 @@ class DataImputer:
         return data
 
     def make_iteration(
-            self,
-            column: Series,
-            data: DataFrame,
-            progress_bar: tqdm,
-            positive_num: bool,
-            learn: bool = True,
-            models: dict = None,
+        self,
+        column: Series,
+        data: DataFrame,
+        progress_bar: tqdm,
+        positive_num: bool,
+        learn: bool = True,
+        models: dict = None,
     ) -> Series:
         """
         Performs a single iteration of imputation for a given column.
