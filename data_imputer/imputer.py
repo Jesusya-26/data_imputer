@@ -214,7 +214,7 @@ class DataImputer:
         Parameters:
         ----------
         damage_degree : int
-            The percentage (0-100) of values to randomly omit (convert to NaN) in the specified columns.
+            The percentage (0-100) of rows to randomly omit (convert to NaN) in the specified columns.
         selected_columns : list, optional
             List of column names to apply the omission simulation. If None, all columns except 'geometry' are used.
             Default is None.
@@ -239,31 +239,28 @@ class DataImputer:
         if not (0 <= damage_degree <= 100):
             raise ValueError("damage_degree must be between 0 and 100")
 
-        # Use all columns except geometry if none are specified
+        # Использовать все колонки, кроме 'geometry', если колонки не заданы
         selected_columns = (
             self.data.drop(["geometry"], axis=1).columns.tolist()
             if not selected_columns
             else selected_columns
         )
 
-        damaged_data = self.data.copy()  # Make a copy of the original data
-
+        damaged_data = self.data.copy()
         total_rows = len(damaged_data)
         num_rows_to_damage = int(total_rows * damage_degree / 100)
 
-        # Randomly select rows and columns to damage
+        # Случайный выбор уникальных строк для повреждения
         rows_to_damage = np.random.choice(total_rows, size=num_rows_to_damage, replace=False)
-        columns_to_damage = np.random.choice(selected_columns, size=num_rows_to_damage, replace=True)
 
-        # Set selected values to NaN
-        for row_idx, col_name in zip(rows_to_damage, columns_to_damage):
-            damaged_data.loc[row_idx, col_name] = np.nan
+        # Установка NaN для всех выбранных столбцов в этих строках
+        damaged_data.loc[rows_to_damage, selected_columns] = np.nan
 
-        # Update internal attributes
+        # Обновление данных
         self.data = damaged_data
         self.nans_position = utils.define_nans_positions(damaged_data)
 
-        # Save the damaged data to file if save flag is True
+        # Сохранение, если флаг save установлен
         if save:
             save_file_name = "_".join([self.file_name, self.time_start])
             utils.save_to_file(
