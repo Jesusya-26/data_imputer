@@ -80,7 +80,6 @@ class DataImputer:
     def __init__(
         self,
         data_path: str | Path | TextIO,
-        real_data_path: str | Path | TextIO,
         cwd: str | Path | TextIO | None = None
     ):
         """
@@ -124,9 +123,6 @@ class DataImputer:
         # Load input data
         self.input_data = self.get_data_from_path(data_path)
         self.data = self.input_data.copy()
-
-        # Load real data
-        self.real_data = self.get_data_from_path(real_data_path)
 
         # Initialize attributes
         self.time_start = datetime.now().strftime("%d%m%y_%H%M%S")
@@ -210,7 +206,7 @@ class DataImputer:
         return data
 
     def simulation_omission(
-        self, damage_degree: int, selected_columns: list = None, save: bool = True
+        self, damage_degree: int, selected_columns: list[str] | None = None, save: bool = True
     ) -> None:
         """
         Simulates missing data by randomly omitting values in the specified columns.
@@ -250,14 +246,18 @@ class DataImputer:
             else selected_columns
         )
 
-        # Generate damaged data by applying random omissions
-        damaged_data = self.data.apply(
-            lambda c: (
-                c.mask(np.random.random(len(c)) < damage_degree / 100)
-                if c.name in selected_columns
-                else c
-            )
-        )
+        damaged_data = self.data.copy()  # Make a copy of the original data
+
+        total_rows = len(damaged_data)
+        num_rows_to_damage = int(total_rows * damage_degree / 100)
+
+        # Randomly select rows and columns to damage
+        rows_to_damage = np.random.choice(total_rows, size=num_rows_to_damage, replace=False)
+        columns_to_damage = np.random.choice(selected_columns, size=num_rows_to_damage, replace=True)
+
+        # Set selected values to NaN
+        for row_idx, col_name in zip(rows_to_damage, columns_to_damage):
+            damaged_data.loc[row_idx, col_name] = np.nan
 
         # Update internal attributes
         self.data = damaged_data
@@ -833,7 +833,7 @@ class DataImputer:
         """
 
         # Create a copy of the initial and imputed data without the 'geometry' column
-        initial_data = self.real_data.copy().drop(["geometry"], axis=1)
+        initial_data = self.input_data.copy().drop(["geometry"], axis=1)
         imputed_data = self.imputed_data.copy().drop(["geometry"], axis=1)
 
         # Check if the initial data still contains missing values
