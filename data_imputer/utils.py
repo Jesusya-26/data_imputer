@@ -80,7 +80,7 @@ def calculate_distance_weighted_values(data: GeoDataFrame, nans: dict) -> GeoDat
     return imputed_initial_vals
 
 
-def calculate_statistics(data: GeoDataFrame, statistics: str) -> GeoDataFrame:
+def calculate_statistics(data: gpd.GeoDataFrame, statistics: str) -> gpd.GeoDataFrame:
     """
     Imputes missing values in a GeoDataFrame using a specified statistical method.
 
@@ -96,19 +96,31 @@ def calculate_statistics(data: GeoDataFrame, statistics: str) -> GeoDataFrame:
     geom_column = data["geometry"]
 
     # Temporarily remove the geometry column for numerical operations
-    data = data.drop(["geometry"], axis=1)
+    data_no_geom = data.drop(columns = ["geometry"])
 
-    # Impute missing values column by column
-    imputed_initial_vals = data.apply(
-        lambda c: c.astype("object").fillna(getattr(c, statistics)() if getattr(c, statistics)() is not np.nan else 0)
-    )
+    # Separate numeric and non-numeric columns
+    numeric_cols = data_no_geom.select_dtypes(include = [np.number]).columns
+    categorical_cols = data_no_geom.select_dtypes(exclude = [np.number]).columns
+
+    # Impute numeric columns using the specified statistical method
+    for col in numeric_cols:
+        if data_no_geom[col].isnull().any():
+            stat_value = getattr(data_no_geom[col], statistics)()
+            # Если столбец целочисленный, приводим значение к int
+            if pd.api.types.is_integer_dtype(data_no_geom[col]):
+                stat_value = int(stat_value)  # Округление для целочисленных данных
+            data_no_geom[col].fillna(stat_value, inplace = True)
+
+    # Impute categorical columns using mode (most frequent value)
+    for col in categorical_cols:
+        if data_no_geom[col].isnull().any():
+            mode_value = data_no_geom[col].mode().iloc[0]
+            data_no_geom[col].fillna(mode_value, inplace = True)
 
     # Recreate the GeoDataFrame by adding the geometry column back
-    imputed_initial_vals = gpd.GeoDataFrame(
-        imputed_initial_vals.join(geom_column), geometry="geometry"
-    )
+    imputed_data = gpd.GeoDataFrame(data_no_geom.join(geom_column), geometry = "geometry")
 
-    return imputed_initial_vals
+    return imputed_data
 
 
 def set_initial_dtypes(

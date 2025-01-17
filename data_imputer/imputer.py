@@ -316,18 +316,20 @@ class DataImputer:
         tqdm.pandas(desc="Search for neighbors:")
         data_no_geom = data.drop(["geometry"], axis=1)
 
-        # Calculate new features based on neighbors
-        new_neighbors_features = data_no_geom.progress_apply(
-            lambda row: data_no_geom.iloc[row["neighbors"]]
-            .drop(["neighbors"], axis=1)
-            .mean(),
-            axis=1,
-        )
+        def process_neighbors(row):
+            neighbors_data = data_no_geom.iloc[row["neighbors"]].drop(["neighbors"], axis=1, errors="ignore")
 
-        # Fill missing values in new neighbor-based features
-        new_neighbors_features = new_neighbors_features.apply(
-            lambda col: col.fillna(col.mean())
-        )
+            numeric_means = neighbors_data.select_dtypes(include=[np.number]).mean()
+
+            categorical_modes = (
+                neighbors_data.select_dtypes(exclude=[np.number])
+                .mode()
+                .iloc[0]
+            )
+
+            return pd.concat([numeric_means, categorical_modes])
+
+        new_neighbors_features = data_no_geom.progress_apply(process_neighbors, axis = 1)
 
         # Join new features back to the original data
         self.data = self.data.join(new_neighbors_features, rsuffix="_neigh")
