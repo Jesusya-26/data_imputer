@@ -3,6 +3,8 @@ import os
 import warnings
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
+from typing import TextIO
 
 import geopandas as gpd
 import numpy as np
@@ -15,6 +17,16 @@ from tqdm import auto, tqdm
 from data_imputer import prediction, utils
 
 warnings.filterwarnings("ignore")
+
+# Defining constants for clarity
+DISTANCE_WEIGHTED = "distance_weighted"
+MEAN = "mean"
+MEDIAN = "median"
+SUPPORTED_METHODS = {DISTANCE_WEIGHTED, MEAN, MEDIAN}
+
+# Defining constants for folder structure
+FITTED_MODEL_DIR = "data_imputer/fitted_model"
+LOGS_DIR = "data_imputer/logs"
 
 
 class DataImputer:
@@ -65,15 +77,22 @@ class DataImputer:
         Mean score of imputation performance. None if not calculated.
     """
 
-    def __init__(self, data_path: str, cwd: str | None = None):
+    def __init__(
+        self,
+        data_path: str | Path | TextIO,
+        real_data_path: str | Path | TextIO,
+        cwd: str | Path | TextIO | None = None
+    ):
         """
         Initialize the DataImputer instance.
 
         Parameters:
         ----------
-        data_path : str
-            Path to the input data file.
-        cwd : str or None, optional
+        data_path : str | Path | TextIO
+            Path to the input data file (with omissions).
+        real_data_path: str | Path | TextIO
+            Path to the real data file (without omissions).
+        cwd : str | Path | TextIO or None, optional
             Current working directory. If None, the system's current working directory is used.
         """
 
@@ -81,14 +100,18 @@ class DataImputer:
         self.cwd = os.getcwd() if cwd is None else cwd
 
         # Load configuration file
-        config_path = os.path.join(self.cwd, "data_imputer", "config", "config_imputation.json")
+        config_path = os.path.join(
+            self.cwd, "data_imputer", "config", "config_imputation.json"
+        )
         try:
             with open(config_path, encoding="utf-8") as f:
                 self.config_imputation = json.load(f)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Configuration file not found at: {config_path}")
-        except json.JSONDecodeError:
-            raise ValueError(f"Invalid JSON format in configuration file: {config_path}")
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"Configuration file not found at: {config_path}") from exc
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Invalid JSON format in configuration file: {config_path}"
+            ) from exc
 
         # Extract configuration settings
         self.projection = self.config_imputation.get("epsg_projection", 4326)
@@ -101,6 +124,9 @@ class DataImputer:
         # Load input data
         self.input_data = self.get_data_from_path(data_path)
         self.data = self.input_data.copy()
+
+        # Load real data
+        self.real_data = self.get_data_from_path(real_data_path)
 
         # Initialize attributes
         self.time_start = datetime.now().strftime("%d%m%y_%H%M%S")
@@ -117,13 +143,13 @@ class DataImputer:
         self.bunch_scores = None
         self.mean_score = None
 
-    def get_data_from_path(self, data_path: str) -> GeoDataFrame:
+    def get_data_from_path(self, data_path: str | Path | TextIO) -> GeoDataFrame:
         """
         Reads geospatial data from the specified file path and processes it based on the configuration.
 
         Parameters:
         ----------
-        data_path : str
+        data_path : str | Path | TextIO
             Path to the input file containing geospatial data.
 
         Returns:
@@ -142,7 +168,9 @@ class DataImputer:
             # Set index column if specified in configuration
             data = data.set_index(self.index_column) if self.index_column else data
         else:
-            raise ValueError("Reading from specified file type is not implemented")
+            raise NotImplementedError(
+                "Reading from specified file type is not implemented"
+            )
 
         # Adjust data types for compatibility with geojson saving
         data = self.check_dtypes(data)
@@ -283,7 +311,9 @@ class DataImputer:
                 lambda x: utils.search_neighbors_from_polygon(x, data.geometry)
             )
         else:
-            raise ValueError("Unsupported search method specified in the configuration.")
+            raise ValueError(
+                "Unsupported search method specified in the configuration."
+            )
 
         # Drop the geometry column for processing
         tqdm.pandas(desc="Search for neighbors:")
@@ -420,20 +450,49 @@ class DataImputer:
         return imputed_data
 
     def zero_impute(self, impute_method: str) -> GeoDataFrame:
+        """
+        Impute missing values in a GeoDataFrame using the specified method.
 
-        data = self.data
-        if impute_method == "distance_weighted":
-            data_with_initial_vals = utils.calculate_distance_weighted_values(
-                data, self.nans_position
+        Parameters:
+        - impute_method (str): The imputation method to use. Supported methods:
+            - "distance_weighted": Fills missing values based on distance-weighted calculations.
+            - "mean": Fills missing values using the mean of the dataset.
+            - "median": Fills missing values using the median of the dataset.
+
+        Returns:
+        - GeoDataFrame: The modified GeoDataFrame with imputed values.
+
+        Raises:
+        - ValueError: If an unsupported imputation method is specified.
+        """
+
+        # Ensure the imputation method is valid
+        if impute_method not in SUPPORTED_METHODS:
+            raise NotImplementedError(
+                f"Specified impute type '{impute_method}' is not implemented."
             )
-        elif impute_method in ("mean", "median"):
-            data_with_initial_vals = utils.calculate_statistics(data, impute_method)
-        else:
-            raise ValueError("Specified impute type is not implemented.")
-        data_with_initial_vals = utils.set_initial_dtypes(
-            self.dtypes, data_with_initial_vals
-        )
 
+        # Perform the appropriate imputation based on the method
+        if impute_method == DISTANCE_WEIGHTED:
+            # Impute using distance-weighted values
+            data_with_initial_vals = utils.calculate_distance_weighted_values(
+                self.data, self.nans_position
+            )
+        else:
+            # Impute using statistical methods (mean or median)
+            data_with_initial_vals = utils.calculate_statistics(
+                self.data, impute_method
+            )
+
+        # Ensure the data types are preserved after imputation
+        try:
+            data_with_initial_vals = utils.set_initial_dtypes(
+                self.dtypes, data_with_initial_vals
+            )
+        except Exception as e:
+            raise ValueError(f"Error while setting data types: {e}") from e
+
+        # Return the modified GeoDataFrame
         return data_with_initial_vals
 
     def chained_calculation(
@@ -490,7 +549,8 @@ class DataImputer:
                     self.make_iteration(
                         x, data, progress_bar, positive_num, learn, models
                     )
-                    if x.name in self.nans_position.keys()  # Apply only to columns with NaNs
+                    if x.name
+                    in self.nans_position.keys()  # Apply only to columns with NaNs
                     else x  # Leave other columns unchanged
                 )
             )
@@ -591,66 +651,142 @@ class DataImputer:
         return predicted_column
 
     def set_save_options(self, save_options: tuple) -> None:
+        """
+        Set options for saving logs and models. If conditions are met,
+        create corresponding directories for saving data.
+
+        Parameters:
+        - save_options (tuple): A tuple containing two boolean values
+          (save_logs, save_models) indicating whether to save logs and models.
+
+        Returns:
+        - None
+
+        Raises:
+        - ValueError: If the save_options tuple is invalid.
+        - OSError: If directory creation fails for any reason.
+        """
+
+        # Validate input
+        if not (
+            isinstance(save_options, tuple)
+            and len(save_options) == 2
+            and all(isinstance(x, bool) for x in save_options)
+        ):
+            raise ValueError("save_options must be a tuple of two boolean values.")
+
+        # Set saving options based on iteration check
         self.save_logs, self.save_models = (
             save_options if self.num_iter == self.iter_counter else (False, False)
         )
-        file_name = f"{self.file_name}_{self.time_start}_{self.imput_counter}"
-        if self.save_models:
-            os.mkdir(
-                os.path.join(
-                    self.cwd,
-                    self.cwd + "/data_imputer/fitted_model",
-                    file_name,
-                )
-            )
-        if self.save_logs:
-            os.mkdir(
-                os.path.join(
-                    self.cwd, self.cwd + "/data_imputer/logs", file_name
-                )
-            )
 
-    def add_flag_columns(self):
-        flag_column = self.input_data.drop(["geometry"], axis=1).columns
+        # Generate a unique filename using object attributes
+        file_name = f"{self.file_name}_{self.time_start}_{self.imput_counter}"
+
+        # Prepare paths for model and log directories
+        model_path = os.path.join(self.cwd, FITTED_MODEL_DIR, file_name)
+        log_path = os.path.join(self.cwd, LOGS_DIR, file_name)
+
+        # Create directories if the save options are enabled
+        if self.save_models:
+            os.makedirs(model_path, exist_ok=True)  # Prevent crash if directory exists
+        if self.save_logs:
+            os.makedirs(log_path, exist_ok=True)  # Prevent crash if directory exists
+
+    def add_flag_columns(self) -> pd.DataFrame:
+        """
+        Generate a DataFrame with boolean flags indicating which values were imputed.
+
+        This function creates a new DataFrame where each column corresponds to the columns
+        in the input data (except 'geometry'), and values are True if the corresponding
+        value was imputed and False otherwise.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing boolean flags for imputed values.
+
+        Raises:
+            KeyError: If 'geometry' column is missing but expected.
+        """
+
+        # Ensure the 'geometry' column exists before dropping it
+        if "geometry" not in self.input_data.columns:
+            raise KeyError("'geometry' column not found in the input data.")
+
+        # Extract columns except 'geometry'
+        flag_columns = self.input_data.drop(columns=["geometry"]).columns
+
+        # Create a DataFrame filled with False
         flag_data = pd.DataFrame(
-            False, columns=flag_column, index=self.input_data.index
+            False, columns=flag_columns, index=self.input_data.index
         )
-        flag_data = flag_data.apply(
-            lambda c: (
-                c.mask(c.index.isin(self.nans_position[c.name]), True)
-                if c.name in self.nans_position.keys()
-                else c
-            )
-        )
-        flag_data.columns = [c + "_is_imputed" for c in flag_column]
+
+        # Efficiently update the flags using a loop instead of apply
+        for col in flag_columns:
+            if col in self.nans_position:
+                flag_data.loc[self.nans_position[col], col] = True
+
+        # Rename columns to indicate they are flags for imputed values
+        flag_data.columns = [f"{col}_is_imputed" for col in flag_columns]
+
         return flag_data
 
-    def impute_by_saved_models(self, positive_num: bool = True) -> GeoDataFrame:
+    def impute_by_saved_models(self, positive_num: bool = True) -> gpd.GeoDataFrame:
+        """
+        Perform imputation using pre-trained models specified in the configuration.
 
+        Args:
+            positive_num (bool): Whether to ensure positive numbers during imputation.
+
+        Returns:
+            gpd.GeoDataFrame: Imputed geospatial data.
+
+        Raises:
+            KeyError: If required configuration keys or models are missing.
+            ValueError: If data structure is not as expected.
+        """
+        # Create a copy of the data to avoid modifying the original
         data = self.data.copy()
-        num_iter = self.config_imputation["num_iteration"]
+
+        # Load number of iterations from config
+        try:
+            num_iter = self.config_imputation["num_iteration"]
+        except KeyError as exc:
+            raise KeyError("Configuration is missing 'num_iteration'.") from exc
+
         self.num_iter = num_iter
+
+        # Parse features with available models
         features_with_models = prediction.parse_config_models(list(data.columns))
+
+        # Filter only the features with models available
         self.nans_position = {
             k: v
             for k, v in self.nans_position.items()
-            if features_with_models[k] is not None
+            if features_with_models.get(k) is not None
         }
-        num_imputation = len(self.nans_position.keys()) * num_iter
 
+        # Compute the number of imputation steps required
+        num_imputation = len(self.nans_position) * num_iter
+
+        # Initial zero-based imputation
         zero_imputed_data = self.zero_impute(
             self.config_imputation["initial_imputation_type"]
         )
+
+        # Sort columns based on missing values for better efficiency
         sort_data = utils.sort_columns(zero_imputed_data, "nans_ascending")
-        sorted_semantic_data = sort_data.drop(["geometry"], axis=1)
+        sorted_semantic_data = sort_data.drop(columns=["geometry"], errors="ignore")
         base_semantic_columns = list(self.dtypes.index)
 
+        # Initialize a progress bar for visualization
         progress_bar = tqdm(
             total=num_imputation,
             position=0,
             leave=True,
             desc="Iteration of Imputation",
         )
+
+        # Perform chained imputation with models
         imputation = self.chained_calculation(
             sorted_semantic_data,
             progress_bar,
@@ -660,49 +796,99 @@ class DataImputer:
             learn=False,
             models=features_with_models,
         )
+
+        # Ensure column order and data types are restored
         imputation = imputation[base_semantic_columns]
         imputed_data = imputation.astype(self.dtypes.to_dict())
+
+        # Convert back to GeoDataFrame and restore CRS
         imputed_data = gpd.GeoDataFrame(imputed_data.join(data.geometry)).set_crs(
             self.projection
         )
+
+        # Save the imputed data to file
         utils.save_to_file(
             imputed_data.reset_index(),
-            self.cwd + "/data_imputer/imputed_data",
-            "_".join([self.file_name, self.time_start]),
+            f"{self.cwd}/data_imputer/imputed_data",
+            f"{self.file_name}_{self.time_start}",
         )
+
+        # Update object attributes with final results
+        self.imputed_data = imputed_data
 
         return imputed_data
 
     def get_quality_metrics(
         self, classification_metric: Callable, regression_metric: Callable
     ) -> dict:
+        """
+        Calculate quality metrics for imputed data and save them as a JSON file.
 
-        initial_data = self.input_data.copy().drop(["geometry"], axis=1)
+        Parameters:
+        - classification_metric (Callable): Function to calculate classification quality metrics.
+        - regression_metric (Callable): Function to calculate regression quality metrics.
+
+        Returns:
+        - dict: A dictionary containing quality metrics for each feature with missing values.
+        """
+
+        # Create a copy of the initial and imputed data without the 'geometry' column
+        initial_data = self.real_data.copy().drop(["geometry"], axis=1)
         imputed_data = self.imputed_data.copy().drop(["geometry"], axis=1)
-        if initial_data.isna().any().any():
-            raise NotImplementedError(
-                "Initial dataset has omissions. Quality metrics can't be calculated."
+
+        # Check if the initial data still contains missing values
+        if imputed_data.isna().any().any():
+            raise ValueError(
+                "Initial dataset contains missing values. Quality metrics cannot be calculated."
             )
 
-        quality_metrics = {
-            k: (
-                classification_metric(
-                    np.array(initial_data[k].loc[v], dtype="float"),
-                    np.array(imputed_data[k].loc[v], dtype="float"),
-                )
-                if k in self.categorical_features
-                else regression_metric(
-                    np.array(initial_data[k].loc[v], dtype="float"),
-                    np.array(imputed_data[k].loc[v], dtype="float"),
-                )
+        # Initialize a dictionary to store the quality metrics for each feature with missing values
+        quality_metrics = {}
+
+        # Loop through features with missing values and compute metrics
+        for feature, missing_indices in self.nans_position.items():
+            if (
+                feature not in initial_data.columns
+                or feature not in imputed_data.columns
+            ):
+                raise KeyError(f"Feature '{feature}' not found in the dataset.")
+
+            # Ensure indices are valid
+            valid_indices = [
+                idx
+                for idx in missing_indices
+                if idx in initial_data.index and idx in imputed_data.index
+            ]
+
+            # Convert values to NumPy arrays for consistent handling
+            true_values = np.array(
+                initial_data[feature].loc[valid_indices], dtype="float"
             )
-            for k, v in self.nans_position.items()
-        }
-        path_to_save = (
-                self.cwd
-                + "/quality_score/quality_score_"
-                + "_".join([self.file_name, self.time_start])
+            predicted_values = np.array(
+                imputed_data[feature].loc[valid_indices], dtype="float"
+            )
+
+            # Select the appropriate metric based on feature type
+            if feature in self.categorical_features:
+                quality_metrics[feature] = classification_metric(
+                    true_values, predicted_values
+                )
+            else:
+                quality_metrics[feature] = regression_metric(
+                    true_values, predicted_values
+                )
+
+        # Construct the file path for saving the results
+        path_to_save = os.path.join(
+            self.cwd, "data_imputer", "quality_score", f"quality_score_{self.file_name}_{self.time_start}.json"
         )
-        with open(path_to_save, "w", encoding="utf-8") as file:
-            json.dump(quality_metrics, file)
+
+        # Save the metrics as a JSON file with proper encoding
+        try:
+            with open(path_to_save, "w", encoding="utf-8") as file:
+                json.dump(quality_metrics, file, indent=4)
+        except IOError as e:
+            raise IOError(f"Failed to save the quality metrics file: {e}") from e
+
+        # Return the calculated quality metrics
         return quality_metrics

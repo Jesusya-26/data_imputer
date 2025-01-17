@@ -11,11 +11,12 @@
       "model__max_features": "[None, 'sqrt']"
     },
     "learn_param": {
-      "scoring": {"score_func": "sklearn.metrics.mean_squared_error"},
+      "scoring": {"score_func": "sklearn.metrics.mean_absolute_error"},
       "n_jobs": 8,
       "cv": 5,
       "factor": 2,
-      "error_score": -1}
+      "error_score": -1
+    }
   },
 
   "classification": {
