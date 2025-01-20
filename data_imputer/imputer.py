@@ -330,11 +330,20 @@ class DataImputer:
                 ["neighbors"], axis=1, errors="ignore"
             )
 
+            if neighbors_data.empty:
+                return pd.Series(dtype="float64")  # Возвращаем пустую строку
+
             numeric_means = neighbors_data.select_dtypes(include=[np.number]).mean()
 
-            categorical_modes = (
-                neighbors_data.select_dtypes(exclude=[np.number]).mode().iloc[0]
-            )
+            categorical_data = neighbors_data.select_dtypes(exclude=[np.number])
+            if not categorical_data.empty:
+                categorical_modes = (
+                    categorical_data.mode().iloc[0]
+                    if not categorical_data.mode().empty
+                    else pd.Series(dtype="object")
+                )
+            else:
+                categorical_modes = pd.Series(dtype="object")
 
             return pd.concat([numeric_means, categorical_modes])
 

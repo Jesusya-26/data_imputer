@@ -3,7 +3,7 @@ from sklearn.metrics import log_loss, mean_absolute_error
 
 input_data = "data_imputer/test_data/living_building_spb.geojson"
 imputer = DataImputer(input_data)
-imputer.simulation_omission(damage_degree=30, save=True)
+imputer.simulation_omission(damage_degree=50, save=False)
 
 imputer.add_neighbors_features()
 
