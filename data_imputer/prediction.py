@@ -5,11 +5,12 @@ For other columns will be used regression predictive method.
 To find the best combination hyperparametrs we use sklearn implementation of Successive Halving algorithm.
 Candidate parameter values are specified by user in config/config_learning.json.
 """
+
 import glob
 import json
 import os
-from typing import Any, TextIO
 from pathlib import Path
+from typing import Any, TextIO
 
 import numpy as np
 import pandas as pd
@@ -205,7 +206,9 @@ def predict_by_model(model: Any, x_predict: DataFrame, is_positive: bool):
     return y_predict
 
 
-def parse_config_models(columns: list[str], path: str | Path | TextIO | None = None) -> dict[str, Any]:
+def parse_config_models(
+    columns: list[str], path: str | Path | TextIO | None = None
+) -> dict[str, Any]:
     """
     Loads pre-trained models based on a configuration file and a list of column names.
 
@@ -269,7 +272,9 @@ def parse_config_models(columns: list[str], path: str | Path | TextIO | None = N
     return existed_model_objects
 
 
-def save_logs_object(model: Any, model_name: str, base_path: str | Path | TextIO | None = None) -> None:
+def save_logs_object(
+    model: Any, model_name: str, base_path: str | Path | TextIO | None = None
+) -> None:
     """
     Saves cross-validation results of a model to an Excel file.
 
@@ -309,7 +314,9 @@ def save_logs_object(model: Any, model_name: str, base_path: str | Path | TextIO
     cv_result.to_excel(log_file, engine="openpyxl")
 
 
-def save_model_object(model: Any, model_name: str, base_path: str | Path | TextIO | None = None) -> None:
+def save_model_object(
+    model: Any, model_name: str, base_path: str | Path | TextIO | None = None
+) -> None:
     """
     Saves a trained model object to a file.
 

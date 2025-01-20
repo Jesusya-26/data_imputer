@@ -96,11 +96,11 @@ def calculate_statistics(data: gpd.GeoDataFrame, statistics: str) -> gpd.GeoData
     geom_column = data["geometry"]
 
     # Temporarily remove the geometry column for numerical operations
-    data_no_geom = data.drop(columns = ["geometry"])
+    data_no_geom = data.drop(columns=["geometry"])
 
     # Separate numeric and non-numeric columns
-    numeric_cols = data_no_geom.select_dtypes(include = [np.number]).columns
-    categorical_cols = data_no_geom.select_dtypes(exclude = [np.number]).columns
+    numeric_cols = data_no_geom.select_dtypes(include=[np.number]).columns
+    categorical_cols = data_no_geom.select_dtypes(exclude=[np.number]).columns
 
     # Impute numeric columns using the specified statistical method
     for col in numeric_cols:
@@ -109,16 +109,16 @@ def calculate_statistics(data: gpd.GeoDataFrame, statistics: str) -> gpd.GeoData
             # Если столбец целочисленный, приводим значение к int
             if pd.api.types.is_integer_dtype(data_no_geom[col]):
                 stat_value = int(stat_value)  # Округление для целочисленных данных
-            data_no_geom[col].fillna(stat_value, inplace = True)
+            data_no_geom[col].fillna(stat_value, inplace=True)
 
     # Impute categorical columns using mode (most frequent value)
     for col in categorical_cols:
         if data_no_geom[col].isnull().any():
             mode_value = data_no_geom[col].mode().iloc[0]
-            data_no_geom[col].fillna(mode_value, inplace = True)
+            data_no_geom[col].fillna(mode_value, inplace=True)
 
     # Recreate the GeoDataFrame by adding the geometry column back
-    imputed_data = gpd.GeoDataFrame(data_no_geom.join(geom_column), geometry = "geometry")
+    imputed_data = gpd.GeoDataFrame(data_no_geom.join(geom_column), geometry="geometry")
 
     return imputed_data
 
@@ -195,7 +195,9 @@ def search_neighbors_from_polygon(loc, df: GeoDataFrame) -> list:
     return touching_polygons.index.tolist()
 
 
-def search_neighbors_from_point(data: GeoDataFrame, n_neigh: int, radius: int) -> GeoDataFrame:
+def search_neighbors_from_point(
+    data: GeoDataFrame, n_neigh: int, radius: int
+) -> GeoDataFrame:
     """
     Search for neighbors from each point in a GeoDataFrame using NearestNeighbors.
 
@@ -236,7 +238,9 @@ def search_neighbors_from_point(data: GeoDataFrame, n_neigh: int, radius: int) -
     neigh_dist = np.array([distances[1:] for distances in neigh_dist])
 
     # Calculate the mean distance to the neighbors
-    neigh_dist_mean = pd.Series([d.mean() if len(d) > 0 else np.nan for d in neigh_dist])
+    neigh_dist_mean = pd.Series(
+        [d.mean() if len(d) > 0 else np.nan for d in neigh_dist]
+    )
 
     # Reset the index for alignment purposes
     data_index = data.index

@@ -10,6 +10,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from geopandas.geodataframe import GeoDataFrame
+from numpy.random import random
 from pandas.core.frame import DataFrame
 from pandas.core.series import Series
 from tqdm import auto, tqdm
@@ -78,9 +79,7 @@ class DataImputer:
     """
 
     def __init__(
-        self,
-        data_path: str | Path | TextIO,
-        cwd: str | Path | TextIO | None = None
+        self, data_path: str | Path | TextIO, cwd: str | Path | TextIO | None = None
     ):
         """
         Initialize the DataImputer instance.
@@ -106,7 +105,9 @@ class DataImputer:
             with open(config_path, encoding="utf-8") as f:
                 self.config_imputation = json.load(f)
         except FileNotFoundError as exc:
-            raise FileNotFoundError(f"Configuration file not found at: {config_path}") from exc
+            raise FileNotFoundError(
+                f"Configuration file not found at: {config_path}"
+            ) from exc
         except json.JSONDecodeError as exc:
             raise ValueError(
                 f"Invalid JSON format in configuration file: {config_path}"
@@ -115,7 +116,9 @@ class DataImputer:
         # Extract configuration settings
         self.projection = self.config_imputation.get("epsg_projection", 4326)
         self.index_column = self.config_imputation.get("index_column", "index")
-        self.categorical_features = self.config_imputation.get("categorical_features", [])
+        self.categorical_features = self.config_imputation.get(
+            "categorical_features", []
+        )
 
         # File name and extension
         self.file_name, self.file_ext = os.path.splitext(os.path.basename(data_path))
@@ -201,12 +204,17 @@ class DataImputer:
             elif dtype.name.startswith("string"):
                 data[column] = data[column].astype("string")  # Ensure string dtype
             elif dtype.name.startswith("Float"):
-                data[column] = data[column].astype("float32")  # Convert Float64 to float32
+                data[column] = data[column].astype(
+                    "float32"
+                )  # Convert Float64 to float32
 
         return data
 
     def simulation_omission(
-        self, damage_degree: int, selected_columns: list[str] | None = None, save: bool = True
+        self,
+        damage_degree: int,
+        selected_columns: list[str] | None = None,
+        save: bool = True,
     ) -> None:
         """
         Simulates missing data by randomly omitting values in the specified columns.
@@ -239,28 +247,29 @@ class DataImputer:
         if not (0 <= damage_degree <= 100):
             raise ValueError("damage_degree must be between 0 and 100")
 
-        # Использовать все колонки, кроме 'geometry', если колонки не заданы
+        # Default to all columns except "geometry" if no columns are specified
         selected_columns = (
-            self.data.drop(["geometry"], axis=1).columns.tolist()
+            self.data.drop(["geometry"], axis=1).columns
             if not selected_columns
             else selected_columns
         )
 
-        damaged_data = self.data.copy()
-        total_rows = len(damaged_data)
-        num_rows_to_damage = int(total_rows * damage_degree / 100)
+        # Apply random omissions to the specified columns
+        damaged_data = self.data.apply(
+            lambda c: (
+                c.mask(random(len(c)) < damage_degree / 100)
+                if c.name in selected_columns
+                else c
+            )
+        )
 
-        # Случайный выбор уникальных строк для повреждения
-        rows_to_damage = np.random.choice(total_rows, size=num_rows_to_damage, replace=False)
-
-        # Установка NaN для всех выбранных столбцов в этих строках
-        damaged_data.loc[rows_to_damage, selected_columns] = np.nan
-
-        # Обновление данных
+        # Update the dataset with damaged data
         self.data = damaged_data
+
+        # Identify positions of missing values
         self.nans_position = utils.define_nans_positions(damaged_data)
 
-        # Сохранение, если флаг save установлен
+        # Save the damaged data to a file if requested
         if save:
             save_file_name = "_".join([self.file_name, self.time_start])
             utils.save_to_file(
@@ -317,19 +326,19 @@ class DataImputer:
         data_no_geom = data.drop(["geometry"], axis=1)
 
         def process_neighbors(row):
-            neighbors_data = data_no_geom.iloc[row["neighbors"]].drop(["neighbors"], axis=1, errors="ignore")
+            neighbors_data = data_no_geom.iloc[row["neighbors"]].drop(
+                ["neighbors"], axis=1, errors="ignore"
+            )
 
             numeric_means = neighbors_data.select_dtypes(include=[np.number]).mean()
 
             categorical_modes = (
-                neighbors_data.select_dtypes(exclude=[np.number])
-                .mode()
-                .iloc[0]
+                neighbors_data.select_dtypes(exclude=[np.number]).mode().iloc[0]
             )
 
             return pd.concat([numeric_means, categorical_modes])
 
-        new_neighbors_features = data_no_geom.progress_apply(process_neighbors, axis = 1)
+        new_neighbors_features = data_no_geom.progress_apply(process_neighbors, axis=1)
 
         # Join new features back to the original data
         self.data = self.data.join(new_neighbors_features, rsuffix="_neigh")
@@ -879,7 +888,10 @@ class DataImputer:
 
         # Construct the file path for saving the results
         path_to_save = os.path.join(
-            self.cwd, "data_imputer", "quality_score", f"quality_score_{self.file_name}_{self.time_start}.json"
+            self.cwd,
+            "data_imputer",
+            "quality_score",
+            f"quality_score_{self.file_name}_{self.time_start}.json",
         )
 
         # Save the metrics as a JSON file with proper encoding
