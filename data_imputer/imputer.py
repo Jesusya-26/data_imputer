@@ -202,11 +202,7 @@ class DataImputer:
             if dtype.name == "boolean":
                 data[column] = data[column].astype("Int32")  # Convert boolean to Int32
             elif dtype.name.startswith("string"):
-                data[column] = data[column].astype("string")  # Ensure string dtype
-            elif dtype.name.startswith("Float"):
-                data[column] = data[column].astype(
-                    "float32"
-                )  # Convert Float64 to float32
+                data[column] = data[column].astype("Int32")  # Convert string to Int32
 
         return data
 
@@ -322,32 +318,17 @@ class DataImputer:
             )
 
         # Drop the geometry column for processing
-        tqdm.pandas(desc="Search for neighbors:")
+        tqdm.pandas(desc="Search for neighbors")
         data_no_geom = data.drop(["geometry"], axis=1)
 
-        def process_neighbors(row):
-            neighbors_data = data_no_geom.iloc[row["neighbors"]].drop(
-                ["neighbors"], axis=1, errors="ignore"
-            )
+        new_neighbors_features = data.progress_apply(
+            lambda x: data_no_geom.iloc[x["neighbors"]].drop(["neighbors"], axis=1).mean(),
+            axis=1,
+        )
 
-            if neighbors_data.empty:
-                return pd.Series(dtype="float64")  # Возвращаем пустую строку
-
-            numeric_means = neighbors_data.select_dtypes(include=[np.number]).mean()
-
-            categorical_data = neighbors_data.select_dtypes(exclude=[np.number])
-            if not categorical_data.empty:
-                categorical_modes = (
-                    categorical_data.mode().iloc[0]
-                    if not categorical_data.mode().empty
-                    else pd.Series(dtype="object")
-                )
-            else:
-                categorical_modes = pd.Series(dtype="object")
-
-            return pd.concat([numeric_means, categorical_modes])
-
-        new_neighbors_features = data_no_geom.progress_apply(process_neighbors, axis=1)
+        new_neighbors_features = new_neighbors_features.apply(
+            lambda x: x.fillna(x.mean())
+        )
 
         # Join new features back to the original data
         self.data = self.data.join(new_neighbors_features, rsuffix="_neigh")
